@@ -1,3 +1,5 @@
+//src/common/interfaces/file-metadata.interface.ts
+
 import { FileStatus } from '../enums/file-status.enum';
 
 export interface FileMetadata {
