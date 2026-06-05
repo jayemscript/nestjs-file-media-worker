@@ -22,6 +22,8 @@ nestjs-file-storage-worker/
 │   │   ├── dtos/
 │   │   │   ├── file-response.dto.ts
 │   │   │   └── file-event.dto.ts
+|   |   |   └── upload-file.dto.ts
+|   |   |   └── delete-file.dto.ts
 │   │   ├── interfaces/
 │   │   │   ├── file-metadata.interface.ts
 │   │   │   ├── file-event.interface.ts
