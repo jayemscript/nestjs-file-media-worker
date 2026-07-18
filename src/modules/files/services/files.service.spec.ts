@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { Readable } from 'node:stream';
 import {
   FileMediaError,
   FileMediaErrorCode,
@@ -18,6 +19,7 @@ import { FilesService } from './files.service';
 
 const NOW = new Date('2026-07-18T00:00:00.000Z');
 const FILE_ID = '507f1f77bcf86cd799439011';
+const SECOND_FILE_ID = '507f1f77bcf86cd799439012';
 const STORAGE_KEY = 'merchant-portal/image/2026/07/file.png';
 
 const incomingFile: IncomingFile = {
@@ -36,9 +38,12 @@ const validatedFile: ValidatedFile = {
   checksum: 'checksum',
 };
 
-function metadata(status = FileStatus.ACTIVE): FileMetadataRecord {
+function metadata(
+  status = FileStatus.ACTIVE,
+  id = FILE_ID,
+): FileMetadataRecord {
   return {
-    id: FILE_ID,
+    id,
     appId: 'merchant-portal',
     originalName: 'avatar.png',
     storageKey: STORAGE_KEY,
@@ -190,6 +195,68 @@ describe('FilesService', () => {
     );
   });
 
+  it('returns per-file results for bulk metadata retrieval', async () => {
+    repository.findActiveByIdAndAppId
+      .mockResolvedValueOnce(metadata())
+      .mockResolvedValueOnce(null);
+
+    await expect(
+      service.getBulkMetadata('merchant-portal', [FILE_ID, SECOND_FILE_ID]),
+    ).resolves.toEqual({
+      successful: [expect.objectContaining({ fileId: FILE_ID })],
+      failed: [
+        {
+          fileId: SECOND_FILE_ID,
+          code: FileMediaErrorCode.FILE_NOT_FOUND,
+          message: 'File not found',
+        },
+      ],
+    });
+  });
+
+  it('rejects duplicate IDs for bulk operations', async () => {
+    await expect(
+      service.getBulkMetadata('merchant-portal', [FILE_ID, FILE_ID]),
+    ).rejects.toMatchObject({ code: FileMediaErrorCode.INVALID_FILE_ID });
+    expect(repository.findActiveByIdAndAppId).not.toHaveBeenCalled();
+  });
+
+  it('preflights every bulk download before opening streams', async () => {
+    repository.findActiveByIdAndAppId
+      .mockResolvedValueOnce(metadata())
+      .mockResolvedValueOnce(null);
+    storage.objectExists.mockResolvedValue(true);
+
+    await expect(
+      service.downloadFiles('merchant-portal', [FILE_ID, SECOND_FILE_ID]),
+    ).rejects.toMatchObject({ code: FileMediaErrorCode.FILE_NOT_FOUND });
+    expect(storage.openReadStream).not.toHaveBeenCalled();
+  });
+
+  it('opens each verified file for a bulk download', async () => {
+    repository.findActiveByIdAndAppId
+      .mockResolvedValueOnce(metadata())
+      .mockResolvedValueOnce(metadata(FileStatus.ACTIVE, SECOND_FILE_ID));
+    storage.objectExists.mockResolvedValue(true);
+    storage.openReadStream.mockImplementation(() =>
+      Promise.resolve({
+        stream: Readable.from('content'),
+        size: 8,
+      }),
+    );
+
+    const downloads = await service.downloadFiles('merchant-portal', [
+      FILE_ID,
+      SECOND_FILE_ID,
+    ]);
+
+    expect(downloads.map(({ fileId }) => fileId)).toEqual([
+      FILE_ID,
+      SECOND_FILE_ID,
+    ]);
+    expect(storage.openReadStream).toHaveBeenCalledTimes(2);
+  });
+
   it('prevents recovery when the storage object is missing', async () => {
     repository.findByIdAndAppId.mockResolvedValue(metadata(FileStatus.DELETED));
     storage.objectExists.mockResolvedValue(false);
@@ -200,6 +267,49 @@ describe('FilesService', () => {
       code: FileMediaErrorCode.FILE_NOT_RECOVERABLE,
     });
     expect(repository.recover).not.toHaveBeenCalled();
+  });
+
+  it('returns partial results for bulk soft deletion', async () => {
+    repository.markDeleted
+      .mockResolvedValueOnce(metadata(FileStatus.DELETED))
+      .mockResolvedValueOnce(null);
+    repository.findByIdAndAppId.mockResolvedValueOnce(null);
+
+    await expect(
+      service.softDeleteFiles('merchant-portal', [FILE_ID, SECOND_FILE_ID]),
+    ).resolves.toEqual({
+      successful: [
+        expect.objectContaining({
+          fileId: FILE_ID,
+          status: FileStatus.DELETED,
+        }),
+      ],
+      failed: [
+        expect.objectContaining({
+          fileId: SECOND_FILE_ID,
+          code: FileMediaErrorCode.FILE_NOT_FOUND,
+        }),
+      ],
+    });
+  });
+
+  it('recovers multiple deleted files sequentially', async () => {
+    repository.findByIdAndAppId
+      .mockResolvedValueOnce(metadata(FileStatus.DELETED))
+      .mockResolvedValueOnce(metadata(FileStatus.DELETED, SECOND_FILE_ID));
+    storage.objectExists.mockResolvedValue(true);
+    repository.recover
+      .mockResolvedValueOnce(metadata())
+      .mockResolvedValueOnce(metadata(FileStatus.ACTIVE, SECOND_FILE_ID));
+
+    const result = await service.recoverFiles('merchant-portal', [
+      FILE_ID,
+      SECOND_FILE_ID,
+    ]);
+
+    expect(result.successful).toHaveLength(2);
+    expect(result.failed).toEqual([]);
+    expect(repository.recover).toHaveBeenCalledTimes(2);
   });
 
   it('requires soft deletion before permanent deletion', async () => {

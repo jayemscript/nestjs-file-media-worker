@@ -54,6 +54,7 @@ describe('File media service (e2e)', () => {
     process.env.MAX_FILE_SIZE_BYTES = '1024';
     process.env.MAX_BULK_FILE_COUNT = '3';
     process.env.MAX_BULK_TOTAL_SIZE_BYTES = '2048';
+    process.env.API_KEY_REQUIRED = 'false';
 
     const moduleFixture = await Test.createTestingModule({
       imports: [AppModule],
@@ -204,6 +205,68 @@ describe('File media service (e2e)', () => {
         expect(body.data.failed).toEqual([
           expect.objectContaining({ code: 'UNSUPPORTED_FILE_TYPE' }),
         ]);
+      });
+  });
+
+  it('reads, downloads, soft-deletes, and recovers files in bulk', async () => {
+    const fileIds: string[] = [];
+    for (const filename of ['first.png', 'second.png']) {
+      const response = await request(app.getHttpServer())
+        .post('/files')
+        .set('x-app-id', TEST_APP_ID)
+        .attach('file', ONE_PIXEL_PNG, {
+          filename,
+          contentType: 'image/png',
+        })
+        .expect(201);
+      const body = response.body as unknown as ApiEnvelope<PublicFileMetadata>;
+      fileIds.push(body.data.fileId);
+    }
+
+    await request(app.getHttpServer())
+      .post('/files/bulk/metadata')
+      .set('x-app-id', TEST_APP_ID)
+      .send({ fileIds })
+      .expect(200)
+      .expect((response) => {
+        const body = response.body as unknown as ApiEnvelope<{
+          successful: PublicFileMetadata[];
+          failed: unknown[];
+        }>;
+        expect(body.data.successful).toHaveLength(2);
+        expect(body.data.failed).toEqual([]);
+      });
+
+    await request(app.getHttpServer())
+      .post('/files/bulk/download')
+      .set('x-app-id', TEST_APP_ID)
+      .send({ fileIds })
+      .expect('Content-Type', /application\/zip/)
+      .expect('Content-Disposition', /files\.zip/)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .delete('/files/bulk')
+      .set('x-app-id', TEST_APP_ID)
+      .send({ fileIds })
+      .expect(200)
+      .expect((response) => {
+        const body = response.body as unknown as ApiEnvelope<{
+          successful: PublicFileMetadata[];
+        }>;
+        expect(body.data.successful).toHaveLength(2);
+      });
+
+    await request(app.getHttpServer())
+      .post('/files/bulk/recover')
+      .set('x-app-id', TEST_APP_ID)
+      .send({ fileIds })
+      .expect(200)
+      .expect((response) => {
+        const body = response.body as unknown as ApiEnvelope<{
+          successful: PublicFileMetadata[];
+        }>;
+        expect(body.data.successful).toHaveLength(2);
       });
   });
 

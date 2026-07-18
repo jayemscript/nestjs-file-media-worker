@@ -1,5 +1,6 @@
 import {
   Controller,
+  Body,
   Delete,
   Get,
   Headers,
@@ -18,15 +19,20 @@ import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { SkipResponseTransform } from '../../../common/decorators/skip-response-transform.decorator';
 import { IncomingFile } from '../domain/file-operations';
+import { BulkFileIdsDto } from '../dtos/bulk-file-ids.dto';
 import { PermanentDeleteGuard } from '../guards/permanent-delete.guard';
 import { createAttachmentDisposition } from '../presentation/content-disposition';
+import { ZipArchiveService } from '../presentation/zip-archive.service';
 import { FilesService } from '../services/files.service';
 import { ApiKeyGuard } from '../../../common/guards/api-key-guard';
 
 @UseGuards(ApiKeyGuard)
 @Controller('files')
 export class FilesController {
-  constructor(private readonly filesService: FilesService) {}
+  constructor(
+    private readonly filesService: FilesService,
+    private readonly zipArchiveService: ZipArchiveService,
+  ) {}
 
   @Post()
   @UseInterceptors(FileInterceptor('file'))
@@ -51,6 +57,48 @@ export class FilesController {
       appId,
       files?.map((file) => this.toIncomingFile(file)),
     );
+  }
+
+  @Post('bulk/metadata')
+  @HttpCode(HttpStatus.OK)
+  getBulkMetadata(
+    @Headers('x-app-id') appId: string | undefined,
+    @Body() request: BulkFileIdsDto,
+  ) {
+    return this.filesService.getBulkMetadata(appId, request.fileIds);
+  }
+
+  @Post('bulk/download')
+  @HttpCode(HttpStatus.OK)
+  @SkipResponseTransform()
+  async downloadFiles(
+    @Headers('x-app-id') appId: string | undefined,
+    @Body() request: BulkFileIdsDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    const files = await this.filesService.downloadFiles(appId, request.fileIds);
+    response.set({
+      'Content-Type': 'application/zip',
+      'Content-Disposition': createAttachmentDisposition('files.zip'),
+    });
+    return new StreamableFile(await this.zipArchiveService.create(files));
+  }
+
+  @Delete('bulk')
+  softDeleteFiles(
+    @Headers('x-app-id') appId: string | undefined,
+    @Body() request: BulkFileIdsDto,
+  ) {
+    return this.filesService.softDeleteFiles(appId, request.fileIds);
+  }
+
+  @Post('bulk/recover')
+  @HttpCode(HttpStatus.OK)
+  recoverFiles(
+    @Headers('x-app-id') appId: string | undefined,
+    @Body() request: BulkFileIdsDto,
+  ) {
+    return this.filesService.recoverFiles(appId, request.fileIds);
   }
 
   @Get(':fileId')

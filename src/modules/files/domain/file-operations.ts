@@ -28,11 +28,26 @@ export interface BulkUploadResult {
   failed: FailedFileUpload[];
 }
 
+export interface FailedBulkFileOperation {
+  fileId: string;
+  code: FileMediaErrorCode | 'FILE_OPERATION_FAILED';
+  message: string;
+}
+
+export interface BulkFileOperationResult {
+  successful: PublicFileMetadata[];
+  failed: FailedBulkFileOperation[];
+}
+
 export interface DownloadFileResult {
   stream: Readable;
   size: number;
   mimeType: string;
   originalName: string;
+}
+
+export interface BulkDownloadEntry extends DownloadFileResult {
+  fileId: string;
 }
 
 export interface PermanentDeleteResult {

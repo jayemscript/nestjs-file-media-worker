@@ -85,6 +85,62 @@ curl -X POST http://localhost:7007/files/bulk \
 
 Request-level file-count and aggregate-size failures reject the entire request. A failure after storage succeeds triggers best-effort storage compensation.
 
+## Bulk metadata and lifecycle operations
+
+Bulk JSON operations use a `fileIds` array. They intentionally use `POST` rather than a request body on `GET`, because GET bodies are not handled consistently by clients, proxies, and caches.
+
+```json
+{
+  "fileIds": [
+    "507f1f77bcf86cd799439011",
+    "507f1f77bcf86cd799439012"
+  ]
+}
+```
+
+- `POST /files/bulk/metadata` returns active metadata for multiple files.
+- `DELETE /files/bulk` soft-deletes multiple active files.
+- `POST /files/bulk/recover` recovers multiple soft-deleted files whose stored objects still exist.
+
+These endpoints process files sequentially and return `200 OK` with best-effort per-file results:
+
+```json
+{
+  "successful": [
+    {
+      "fileId": "507f1f77bcf86cd799439011",
+      "appId": "merchant-portal",
+      "originalName": "avatar.png",
+      "status": "active"
+    }
+  ],
+  "failed": [
+    {
+      "fileId": "507f1f77bcf86cd799439012",
+      "code": "FILE_NOT_FOUND",
+      "message": "File not found"
+    }
+  ]
+}
+```
+
+The array must be non-empty, contain unique MongoDB ObjectIds, and stay within `MAX_BULK_FILE_COUNT`. Invalid request-level input rejects the entire request. File lookup and lifecycle transitions remain scoped by both `x-app-id` and `fileId`.
+
+## Bulk download
+
+`POST /files/bulk/download` accepts the same JSON body and streams a ZIP archive. This endpoint bypasses the JSON response envelope.
+
+```bash
+curl -X POST http://localhost:7007/files/bulk/download \
+  -H "Content-Type: application/json" \
+  -H "x-app-id: merchant-portal" \
+  -H "x-api-key: YOUR_CONSUMER_API_KEY" \
+  --data '{"fileIds":["507f1f77bcf86cd799439011","507f1f77bcf86cd799439012"]}' \
+  --output files.zip
+```
+
+Every requested file must be active, owned by the requesting application, and physically available before streaming begins. If any file fails preflight, the request returns an error instead of a partial archive. The combined uncompressed file size must not exceed `MAX_BULK_TOTAL_SIZE_BYTES`. ZIP entry names include the file ID to prevent duplicate original filenames from colliding.
+
 ## Metadata and download
 
 ```bash
@@ -155,3 +211,5 @@ Supported defaults are JPEG, PNG, GIF, WebP, PDF, DOCX, XLSX, MP3, WAV, MP4, and
 ## Postman
 
 For every file request, add `x-app-id` and, when API-key authentication is enabled, `x-api-key`. For uploads, select `form-data` and use a File value named `file` or repeated File values named `files`. Do not manually set `Content-Type`; Postman supplies the multipart boundary.
+
+For bulk JSON operations, select **Body → raw → JSON** and send `{ "fileIds": ["..."] }`. For bulk download, use **Send and Download** in Postman and save the response as `files.zip`.

@@ -13,6 +13,8 @@ import {
   PublicFileMetadata,
 } from '../domain/file-metadata';
 import {
+  BulkDownloadEntry,
+  BulkFileOperationResult,
   BulkUploadResult,
   DownloadFileResult,
   IncomingFile,
@@ -155,6 +157,17 @@ export class FilesService {
     return this.toPublicMetadata(metadata);
   }
 
+  async getBulkMetadata(
+    appIdValue: unknown,
+    fileIds: string[],
+  ): Promise<BulkFileOperationResult> {
+    const appId = this.appContextService.requireAppId(appIdValue);
+    this.assertBulkFileIds(fileIds);
+    return this.runBulkFileOperation(fileIds, (fileId) =>
+      this.getMetadata(appId, fileId),
+    );
+  }
+
   async downloadFile(
     appIdValue: unknown,
     fileId: string,
@@ -182,6 +195,60 @@ export class FilesService {
     };
   }
 
+  async downloadFiles(
+    appIdValue: unknown,
+    fileIds: string[],
+  ): Promise<BulkDownloadEntry[]> {
+    const appId = this.appContextService.requireAppId(appIdValue);
+    this.assertBulkFileIds(fileIds);
+
+    const metadataRecords: FileMetadataRecord[] = [];
+    let totalSize = 0;
+    for (const fileId of fileIds) {
+      const metadata = await this.repository.findActiveByIdAndAppId(
+        fileId,
+        appId,
+      );
+      if (
+        !metadata ||
+        !(await this.storageProvider.objectExists(metadata.storageKey))
+      ) {
+        throw this.fileNotFoundError();
+      }
+      totalSize += metadata.size;
+      metadataRecords.push(metadata);
+    }
+
+    if (totalSize > this.maxBulkTotalSizeBytes) {
+      throw new FileMediaError(
+        FileMediaErrorCode.FILE_TOO_LARGE,
+        `Bulk download exceeds the ${this.maxBulkTotalSizeBytes}-byte aggregate limit`,
+      );
+    }
+
+    const downloads: BulkDownloadEntry[] = [];
+    try {
+      for (const metadata of metadataRecords) {
+        const storedObject = await this.storageProvider.openReadStream(
+          metadata.storageKey,
+        );
+        downloads.push({
+          fileId: metadata.id,
+          stream: storedObject.stream,
+          size: storedObject.size,
+          mimeType: metadata.mimeType,
+          originalName: metadata.originalName,
+        });
+      }
+      return downloads;
+    } catch (error) {
+      for (const download of downloads) {
+        download.stream.destroy();
+      }
+      throw error;
+    }
+  }
+
   async softDeleteFile(
     appIdValue: unknown,
     fileId: string,
@@ -204,6 +271,17 @@ export class FilesService {
     throw new FileMediaError(
       FileMediaErrorCode.FILE_ALREADY_DELETED,
       'The file is already deleted or being permanently deleted',
+    );
+  }
+
+  async softDeleteFiles(
+    appIdValue: unknown,
+    fileIds: string[],
+  ): Promise<BulkFileOperationResult> {
+    const appId = this.appContextService.requireAppId(appIdValue);
+    this.assertBulkFileIds(fileIds);
+    return this.runBulkFileOperation(fileIds, (fileId) =>
+      this.softDeleteFile(appId, fileId),
     );
   }
 
@@ -235,6 +313,17 @@ export class FilesService {
       );
     }
     return this.toPublicMetadata(recovered);
+  }
+
+  async recoverFiles(
+    appIdValue: unknown,
+    fileIds: string[],
+  ): Promise<BulkFileOperationResult> {
+    const appId = this.appContextService.requireAppId(appIdValue);
+    this.assertBulkFileIds(fileIds);
+    return this.runBulkFileOperation(fileIds, (fileId) =>
+      this.recoverFile(appId, fileId),
+    );
   }
 
   async permanentlyDeleteFile(
@@ -293,6 +382,48 @@ export class FilesService {
     }
   }
 
+  private assertBulkFileIds(fileIds: string[]): void {
+    if (!Array.isArray(fileIds) || fileIds.length === 0) {
+      throw new FileMediaError(
+        FileMediaErrorCode.INVALID_FILE_ID,
+        'fileIds must be a non-empty array of MongoDB ObjectIds',
+      );
+    }
+    if (fileIds.length > this.maxBulkFileCount) {
+      throw new FileMediaError(
+        FileMediaErrorCode.BULK_LIMIT_EXCEEDED,
+        `Bulk operations accept at most ${this.maxBulkFileCount} file IDs`,
+      );
+    }
+    if (new Set(fileIds).size !== fileIds.length) {
+      throw new FileMediaError(
+        FileMediaErrorCode.INVALID_FILE_ID,
+        'fileIds must not contain duplicates',
+      );
+    }
+    for (const fileId of fileIds) {
+      this.assertFileId(fileId);
+    }
+  }
+
+  private async runBulkFileOperation(
+    fileIds: string[],
+    operation: (fileId: string) => Promise<PublicFileMetadata>,
+  ): Promise<BulkFileOperationResult> {
+    const result: BulkFileOperationResult = { successful: [], failed: [] };
+    for (const fileId of fileIds) {
+      try {
+        result.successful.push(await operation(fileId));
+      } catch (error) {
+        result.failed.push({
+          fileId,
+          ...this.normalizeBulkOperationError(error),
+        });
+      }
+    }
+    return result;
+  }
+
   private fileNotFoundError(): FileMediaError {
     return new FileMediaError(
       FileMediaErrorCode.FILE_NOT_FOUND,
@@ -328,5 +459,18 @@ export class FilesService {
       return { code: error.code, message: error.message };
     }
     return { code: 'UPLOAD_FAILED', message: 'The file could not be uploaded' };
+  }
+
+  private normalizeBulkOperationError(error: unknown): {
+    code: FileMediaErrorCode | 'FILE_OPERATION_FAILED';
+    message: string;
+  } {
+    if (error instanceof FileMediaError) {
+      return { code: error.code, message: error.message };
+    }
+    return {
+      code: 'FILE_OPERATION_FAILED',
+      message: 'The file operation could not be completed',
+    };
   }
 }

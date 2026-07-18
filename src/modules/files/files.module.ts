@@ -6,6 +6,7 @@ import { StorageConfiguration } from '../../config/storage.config';
 import { StorageModule } from '../storage/storage.module';
 import { FilesController } from './controllers/files.controller';
 import { PermanentDeleteGuard } from './guards/permanent-delete.guard';
+import { ZipArchiveService } from './presentation/zip-archive.service';
 import { FILE_METADATA_REPOSITORY } from './repositories/file-metadata.repository.interface';
 import { MongooseFileMetadataRepository } from './repositories/mongoose-file-metadata.repository';
 import {
@@ -42,6 +43,7 @@ import { FilesService } from './services/files.service';
     FileValidationService,
     AppContextService,
     PermanentDeleteGuard,
+    ZipArchiveService,
     MongooseFileMetadataRepository,
     {
       provide: FILE_METADATA_REPOSITORY,

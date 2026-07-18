@@ -26,6 +26,7 @@ export function configureApplication(app: INestApplication): void {
       'Content-Type',
       'Authorization',
       'X-App-Id',
+      'X-Api-Key',
       'X-Admin-Key',
     ],
     credentials: true,
