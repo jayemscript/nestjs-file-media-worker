@@ -43,6 +43,7 @@ Integration and e2e tests use `MONGO_TEST_URI` when present, otherwise `MONGO_UR
 - [API documentation](docs/API_DOCUMENTATION.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Monolith vs. microservices](docs/MONOLITH_VS_MICROSERVICES.md)
+- [Planned local transfer authorization](docs/LOCAL_TRANSFER_AUTHORIZATION_PLAN.md)
 - [Security](docs/SECURITY.md)
 
 ## Phase 1 limitations
