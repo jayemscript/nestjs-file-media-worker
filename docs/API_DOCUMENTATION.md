@@ -2,7 +2,25 @@
 
 Base URL for local development: `http://localhost:7007`.
 
+## Authentication and application scope
+
 All file endpoints require a lowercase `x-app-id` header. Phase 1 treats this header as a development identity source; production deployments must replace it with an authenticated application identity.
+
+Consumer API-key authentication is controlled by these environment variables:
+
+```dotenv
+API_KEY_REQUIRED=true
+API_KEYS=consumer-one-key,consumer-two-key
+```
+
+`API_KEYS` is a comma-separated list, allowing each registered consumer application to use its own key. When `API_KEY_REQUIRED=true`, requests to file endpoints must provide the key using the preferred `x-api-key` header:
+
+```http
+x-app-id: merchant-portal
+x-api-key: consumer-one-key
+```
+
+The `api_key` query parameter is also supported, but the header is recommended because URLs are commonly retained in logs and browser history. Missing or invalid keys return `401 Unauthorized`. The consumer API key does not replace `x-app-id`; both are required when API-key authentication is enabled.
 
 JSON success responses use this envelope:
 
@@ -34,6 +52,7 @@ Errors use stable codes and never expose local paths or provider errors:
 ```bash
 curl -X POST http://localhost:7007/files \
   -H "x-app-id: merchant-portal" \
+  -H "x-api-key: YOUR_CONSUMER_API_KEY" \
   -F "file=@./avatar.png"
 ```
 
@@ -46,6 +65,7 @@ The response includes `fileId`, `appId`, sanitized `originalName`, `fileType`, v
 ```bash
 curl -X POST http://localhost:7007/files/bulk \
   -H "x-app-id: merchant-portal" \
+  -H "x-api-key: YOUR_CONSUMER_API_KEY" \
   -F "files=@./avatar.png" \
   -F "files=@./receipt.pdf"
 ```
@@ -69,10 +89,12 @@ Request-level file-count and aggregate-size failures reject the entire request. 
 
 ```bash
 curl http://localhost:7007/files/FILE_ID \
-  -H "x-app-id: merchant-portal"
+  -H "x-app-id: merchant-portal" \
+  -H "x-api-key: YOUR_CONSUMER_API_KEY"
 
 curl -OJ http://localhost:7007/files/FILE_ID/download \
-  -H "x-app-id: merchant-portal"
+  -H "x-app-id: merchant-portal" \
+  -H "x-api-key: YOUR_CONSUMER_API_KEY"
 ```
 
 - `GET /files/:fileId` returns active metadata.
@@ -83,10 +105,12 @@ curl -OJ http://localhost:7007/files/FILE_ID/download \
 
 ```bash
 curl -X DELETE http://localhost:7007/files/FILE_ID \
-  -H "x-app-id: merchant-portal"
+  -H "x-app-id: merchant-portal" \
+  -H "x-api-key: YOUR_CONSUMER_API_KEY"
 
 curl -X POST http://localhost:7007/files/FILE_ID/recover \
-  -H "x-app-id: merchant-portal"
+  -H "x-app-id: merchant-portal" \
+  -H "x-api-key: YOUR_CONSUMER_API_KEY"
 ```
 
 Soft deletion retains the physical object but blocks normal metadata and download access. Recovery succeeds only when the metadata is deleted and the physical object still exists.
@@ -98,6 +122,7 @@ The file must be soft-deleted first. A dedicated admin key is always required.
 ```bash
 curl -X DELETE http://localhost:7007/files/FILE_ID/permanent \
   -H "x-app-id: merchant-portal" \
+  -H "x-api-key: YOUR_CONSUMER_API_KEY" \
   -H "x-admin-key: YOUR_HARD_DELETE_ADMIN_KEY"
 ```
 
@@ -119,7 +144,8 @@ Supported defaults are JPEG, PNG, GIF, WebP, PDF, DOCX, XLSX, MP3, WAV, MP4, and
 | 200 | Successful read, lifecycle action, or bulk processing |
 | 201 | Single file created |
 | 400 | Invalid app/file identifier or missing multipart field |
-| 401/403 | Missing or invalid permanent-delete credential |
+| 401 | Missing or invalid consumer API key |
+| 403 | Missing or invalid permanent-delete admin key |
 | 404 | Missing, deleted, or cross-application file |
 | 409 | Invalid lifecycle transition |
 | 413 | File, count, or aggregate size limit exceeded |
@@ -128,4 +154,4 @@ Supported defaults are JPEG, PNG, GIF, WebP, PDF, DOCX, XLSX, MP3, WAV, MP4, and
 
 ## Postman
 
-Create a multipart request, add `x-app-id`, select `form-data`, and use a File value named `file` or repeated File values named `files`. Do not manually set `Content-Type`; Postman supplies the multipart boundary.
+For every file request, add `x-app-id` and, when API-key authentication is enabled, `x-api-key`. For uploads, select `form-data` and use a File value named `file` or repeated File values named `files`. Do not manually set `Content-Type`; Postman supplies the multipart boundary.

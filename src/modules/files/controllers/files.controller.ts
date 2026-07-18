@@ -21,7 +21,9 @@ import { IncomingFile } from '../domain/file-operations';
 import { PermanentDeleteGuard } from '../guards/permanent-delete.guard';
 import { createAttachmentDisposition } from '../presentation/content-disposition';
 import { FilesService } from '../services/files.service';
+import { ApiKeyGuard } from '../../../common/guards/api-key-guard';
 
+@UseGuards(ApiKeyGuard)
 @Controller('files')
 export class FilesController {
   constructor(private readonly filesService: FilesService) {}
