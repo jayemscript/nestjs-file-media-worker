@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run lint
+      - run: pnpm run build
+      - run: pnpm run test --runInBand
+      - name: Atlas integration and e2e tests
+        if: ${{ env.MONGO_TEST_URI != '' }}
+        env:
+          MONGO_TEST_URI: ${{ secrets.MONGO_TEST_URI }}
+          MONGO_URI: ${{ secrets.MONGO_TEST_URI }}
+          MONGO_TEST_DB_NAME: file_media_service_test
+          MONGO_DB_NAME: file_media_service_test
+          STORAGE_PROVIDER: local
+          LOCAL_STORAGE_ROOT: ./upload
+          HARD_DELETE_ADMIN_KEY: ci-admin-key-with-sufficient-length
+        run: pnpm run test:integration && pnpm run test:e2e

@@ -1,9 +1,7 @@
-//src/common/dtos/error-response.dto.ts
-export class ErrorResponseDto<T> {
+export class ErrorResponseDto {
   statusCode!: number;
-  message!: string;
-  error?: string;
+  message!: string | string[];
+  error!: string;
   timestamp!: string;
-  path?: string;
-  details?: Record<string, T>;
+  path!: string;
 }

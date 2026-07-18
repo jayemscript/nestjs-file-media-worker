@@ -44,9 +44,15 @@ importers:
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
+      file-type:
+        specifier: ^21.3.4
+        version: 21.3.4
       mime-types:
         specifier: ^3.0.2
         version: 3.0.2
+      mongoose:
+        specifier: ^9.7.4
+        version: 9.7.4
       multer:
         specifier: ^2.1.1
         version: 2.1.1
