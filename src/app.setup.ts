@@ -5,6 +5,10 @@ import type { Express } from 'express';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import dns from 'node:dns';
+
+// Set DNS servers globally for c-ares resolution methods
+dns.setServers(['1.1.1.1', '8.8.8.8']);
 
 export function configureApplication(app: INestApplication): void {
   const configService = app.get(ConfigService);
