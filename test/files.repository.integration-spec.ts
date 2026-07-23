@@ -5,11 +5,17 @@ import {
   FileStatus,
   FileType,
 } from '../src/modules/files/domain/file-metadata';
+import { TransferOperation } from '../src/modules/files/domain/transfer-authorization';
 import { MongooseFileMetadataRepository } from '../src/modules/files/repositories/mongoose-file-metadata.repository';
+import { MongooseTransferAuthorizationRepository } from '../src/modules/files/repositories/mongoose-transfer-authorization.repository';
 import {
   FileMetadataDocument,
   FileMetadataSchema,
 } from '../src/modules/files/schemas/file-metadata.schema';
+import {
+  TransferAuthorizationDocument,
+  TransferAuthorizationSchema,
+} from '../src/modules/files/schemas/transfer-authorization.schema';
 
 const mongoUri = process.env.MONGO_TEST_URI ?? process.env.MONGO_URI;
 const testDatabaseName =
@@ -27,7 +33,9 @@ if (!testDatabaseName.endsWith('_test')) {
 describe('MongooseFileMetadataRepository (integration)', () => {
   let connection: Connection;
   let metadataModel: Model<FileMetadataDocument>;
+  let transferAuthorizationModel: Model<TransferAuthorizationDocument>;
   let repository: MongooseFileMetadataRepository;
+  let transferRepository: MongooseTransferAuthorizationRepository;
   let appId: string;
 
   beforeAll(async () => {
@@ -41,7 +49,17 @@ describe('MongooseFileMetadataRepository (integration)', () => {
       'files',
     );
     repository = new MongooseFileMetadataRepository(metadataModel);
+    transferAuthorizationModel =
+      connection.model<TransferAuthorizationDocument>(
+        'TransferAuthorizationIntegration',
+        TransferAuthorizationSchema,
+        'transfer_authorizations',
+      );
+    transferRepository = new MongooseTransferAuthorizationRepository(
+      transferAuthorizationModel,
+    );
     await metadataModel.init();
+    await transferAuthorizationModel.init();
   });
 
   beforeEach(() => {
@@ -51,6 +69,9 @@ describe('MongooseFileMetadataRepository (integration)', () => {
   afterEach(async () => {
     if (metadataModel) {
       await metadataModel.deleteMany({ appId }).exec();
+    }
+    if (transferAuthorizationModel) {
+      await transferAuthorizationModel.deleteMany({ appId }).exec();
     }
   });
 
@@ -107,5 +128,33 @@ describe('MongooseFileMetadataRepository (integration)', () => {
     await expect(repository.deletePurging(created.id, appId)).resolves.toBe(
       true,
     );
+  });
+
+  it('atomically consumes a transfer authorization once', async () => {
+    const tokenIdHash = randomUUID().replaceAll('-', '').padEnd(64, '0');
+    const usedAt = new Date();
+    await transferRepository.create({
+      tokenIdHash,
+      appId,
+      operation: TransferOperation.UPLOAD,
+      expiresAt: new Date(usedAt.getTime() + 60_000),
+    });
+
+    await expect(
+      transferRepository.consume(
+        tokenIdHash,
+        appId,
+        TransferOperation.UPLOAD,
+        usedAt,
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      transferRepository.consume(
+        tokenIdHash,
+        appId,
+        TransferOperation.UPLOAD,
+        usedAt,
+      ),
+    ).resolves.toBe(false);
   });
 });

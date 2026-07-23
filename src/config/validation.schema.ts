@@ -9,6 +9,9 @@ const POSITIVE_INTEGER_KEYS = [
   'MAX_FILE_SIZE_BYTES',
   'MAX_BULK_FILE_COUNT',
   'MAX_BULK_TOTAL_SIZE_BYTES',
+  'TRANSFER_TOKEN_TTL_SECONDS',
+  'TRANSFER_RATE_LIMIT_MAX',
+  'TRANSFER_RATE_LIMIT_WINDOW_SECONDS',
 ] as const;
 
 export function validateEnvironment(
@@ -62,9 +65,75 @@ export function validateEnvironment(
     errors.push('HARD_DELETE_ADMIN_KEY must be at least 16 characters');
   }
 
+  const transferEnabledValue =
+    environment.TRANSFER_AUTHORIZATION_ENABLED ?? 'false';
+  if (
+    typeof transferEnabledValue !== 'string' ||
+    !['true', 'false'].includes(transferEnabledValue.toLowerCase())
+  ) {
+    errors.push('TRANSFER_AUTHORIZATION_ENABLED must be true or false');
+  }
+
+  const transferEnabled =
+    typeof transferEnabledValue === 'string' &&
+    transferEnabledValue.toLowerCase() === 'true';
+  if (transferEnabled) {
+    const signingKey = environment.TRANSFER_TOKEN_SIGNING_KEY;
+    if (typeof signingKey !== 'string' || signingKey.length < 32) {
+      errors.push('TRANSFER_TOKEN_SIGNING_KEY must be at least 32 characters');
+    }
+
+    const publicUrl = environment.FILE_SERVICE_PUBLIC_URL;
+    if (typeof publicUrl !== 'string' || !isHttpUrl(publicUrl)) {
+      errors.push('FILE_SERVICE_PUBLIC_URL must be a valid HTTP or HTTPS URL');
+    } else if (
+      environment.NODE_ENV === 'production' &&
+      !isHttpsUrl(publicUrl)
+    ) {
+      errors.push('FILE_SERVICE_PUBLIC_URL must use HTTPS in production');
+    }
+
+    const apiKeys = environment.API_KEYS;
+    if (
+      typeof apiKeys !== 'string' ||
+      apiKeys
+        .split(',')
+        .map((key) => key.trim())
+        .filter(Boolean).length === 0
+    ) {
+      errors.push(
+        'API_KEYS must contain at least one key when transfer authorization is enabled',
+      );
+    }
+
+    const tokenTtlSeconds = Number(
+      environment.TRANSFER_TOKEN_TTL_SECONDS ?? 300,
+    );
+    if (tokenTtlSeconds > 3600) {
+      errors.push('TRANSFER_TOKEN_TTL_SECONDS must not exceed 3600');
+    }
+  }
+
   if (errors.length > 0) {
     throw new Error(`Invalid environment configuration: ${errors.join('; ')}`);
   }
 
   return environment;
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function isHttpsUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
 }

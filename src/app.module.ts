@@ -7,6 +7,7 @@ import databaseConfig, {
   DatabaseConfiguration,
 } from './config/database.config';
 import storageConfig from './config/storage.config';
+import transferConfig from './config/transfer.config';
 import { validateEnvironment } from './config/validation.schema';
 import { FilesModule } from './modules/files/files.module';
 import { HealthModule } from './modules/health/health.module';
@@ -15,7 +16,7 @@ import { HealthModule } from './modules/health/health.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [databaseConfig, storageConfig],
+      load: [databaseConfig, storageConfig, transferConfig],
       validate: validateEnvironment,
     }),
     MongooseModule.forRootAsync({

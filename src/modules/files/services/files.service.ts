@@ -173,17 +173,7 @@ export class FilesService {
     fileId: string,
   ): Promise<DownloadFileResult> {
     const appId = this.appContextService.requireAppId(appIdValue);
-    this.assertFileId(fileId);
-    const metadata = await this.repository.findActiveByIdAndAppId(
-      fileId,
-      appId,
-    );
-    if (
-      !metadata ||
-      !(await this.storageProvider.objectExists(metadata.storageKey))
-    ) {
-      throw this.fileNotFoundError();
-    }
+    const metadata = await this.getDownloadableMetadata(appId, fileId);
     const storedObject = await this.storageProvider.openReadStream(
       metadata.storageKey,
     );
@@ -193,6 +183,14 @@ export class FilesService {
       mimeType: metadata.mimeType,
       originalName: metadata.originalName,
     };
+  }
+
+  async ensureFileDownloadable(
+    appIdValue: unknown,
+    fileId: string,
+  ): Promise<void> {
+    const appId = this.appContextService.requireAppId(appIdValue);
+    await this.getDownloadableMetadata(appId, fileId);
   }
 
   async downloadFiles(
@@ -371,6 +369,24 @@ export class FilesService {
         error instanceof Error ? error.stack : undefined,
       );
     }
+  }
+
+  private async getDownloadableMetadata(
+    appId: string,
+    fileId: string,
+  ): Promise<FileMetadataRecord> {
+    this.assertFileId(fileId);
+    const metadata = await this.repository.findActiveByIdAndAppId(
+      fileId,
+      appId,
+    );
+    if (
+      !metadata ||
+      !(await this.storageProvider.objectExists(metadata.storageKey))
+    ) {
+      throw this.fileNotFoundError();
+    }
+    return metadata;
   }
 
   private assertFileId(fileId: string): void {

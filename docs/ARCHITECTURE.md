@@ -13,6 +13,15 @@ client -> FilesController -> FilesService -> StorageProvider (local)
 
 File bytes should go directly from the client to this service rather than through a BFF and domain service. A BFF or gateway may authorize the request without proxying the multipart body.
 
+Optional short-lived local transfer flow:
+
+```text
+admin portal -> BFF -> file service: create scoped authorization
+admin portal -> file service -> local provider: transfer using one-time token
+```
+
+The BFF keeps its permanent API key. The browser receives a short-lived token whose signed claims carry the trusted `appId`, operation, expiry, and transfer constraints. MongoDB atomically claims the token once and cleans expired replay records with a TTL index.
+
 ## Boundaries
 
 - Controllers translate HTTP/Multer values into application-owned inputs and set download headers.
@@ -36,7 +45,7 @@ Storage and MongoDB cannot share a transaction:
 
 ## Security model
 
-All queries include `appId` and `fileId`; cross-application access is indistinguishable from a missing file. The Phase 1 `x-app-id` resolver is intentionally replaceable and must be backed by API-key, token, gateway, or workload identity before production use.
+All queries include `appId` and `fileId`; cross-application access is indistinguishable from a missing file. `x-app-id` identifies the consuming application but does not authenticate it. Normal service requests use API-key or gateway authentication; direct browser routes derive `appId` from the signed transfer token rather than trusting a browser header.
 
 Content is verified using magic bytes, declared MIME comparison, an allowlist, size/count limits, safe filename handling, and opaque keys. See `SECURITY.md` for remaining responsibilities.
 

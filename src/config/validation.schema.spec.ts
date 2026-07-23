@@ -41,4 +41,54 @@ describe('validateEnvironment', () => {
       'MAX_BULK_TOTAL_SIZE_BYTES must be greater than or equal to MAX_FILE_SIZE_BYTES',
     );
   });
+
+  it('accepts enabled transfer authorization with secure configuration', () => {
+    const environment = {
+      ...validEnvironment,
+      TRANSFER_AUTHORIZATION_ENABLED: 'true',
+      TRANSFER_TOKEN_SIGNING_KEY:
+        'test-transfer-signing-key-at-least-32-characters',
+      FILE_SERVICE_PUBLIC_URL: 'https://files.example.test',
+      API_KEYS: 'admin-bff-key',
+    };
+
+    expect(validateEnvironment(environment)).toEqual(environment);
+  });
+
+  it('requires signing, URL, and API-key configuration when enabled', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        TRANSFER_AUTHORIZATION_ENABLED: 'true',
+      }),
+    ).toThrow('TRANSFER_TOKEN_SIGNING_KEY must be at least 32 characters');
+  });
+
+  it('limits transfer authorizations to one hour', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        TRANSFER_AUTHORIZATION_ENABLED: 'true',
+        TRANSFER_TOKEN_SIGNING_KEY:
+          'test-transfer-signing-key-at-least-32-characters',
+        FILE_SERVICE_PUBLIC_URL: 'https://files.example.test',
+        API_KEYS: 'admin-bff-key',
+        TRANSFER_TOKEN_TTL_SECONDS: '3601',
+      }),
+    ).toThrow('TRANSFER_TOKEN_TTL_SECONDS must not exceed 3600');
+  });
+
+  it('requires an HTTPS public transfer URL in production', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        TRANSFER_AUTHORIZATION_ENABLED: 'true',
+        TRANSFER_TOKEN_SIGNING_KEY:
+          'test-transfer-signing-key-at-least-32-characters',
+        FILE_SERVICE_PUBLIC_URL: 'http://files.example.test',
+        API_KEYS: 'admin-bff-key',
+      }),
+    ).toThrow('FILE_SERVICE_PUBLIC_URL must use HTTPS in production');
+  });
 });

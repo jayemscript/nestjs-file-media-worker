@@ -26,6 +26,16 @@ const FILE_ERROR_STATUS: Readonly<Record<FileMediaErrorCode, HttpStatus>> = {
     HttpStatus.SERVICE_UNAVAILABLE,
   [FileMediaErrorCode.ADMIN_KEY_REQUIRED]: HttpStatus.UNAUTHORIZED,
   [FileMediaErrorCode.ADMIN_KEY_INVALID]: HttpStatus.FORBIDDEN,
+  [FileMediaErrorCode.TRANSFER_AUTHORIZATION_DISABLED]:
+    HttpStatus.SERVICE_UNAVAILABLE,
+  [FileMediaErrorCode.TRANSFER_AUTHORIZATION_REQUIRED]: HttpStatus.UNAUTHORIZED,
+  [FileMediaErrorCode.TRANSFER_AUTHORIZATION_INVALID]: HttpStatus.UNAUTHORIZED,
+  [FileMediaErrorCode.TRANSFER_AUTHORIZATION_EXPIRED]: HttpStatus.UNAUTHORIZED,
+  [FileMediaErrorCode.TRANSFER_AUTHORIZATION_USED]: HttpStatus.CONFLICT,
+  [FileMediaErrorCode.TRANSFER_AUTHORIZATION_INVALID_REQUEST]:
+    HttpStatus.BAD_REQUEST,
+  [FileMediaErrorCode.TRANSFER_RATE_LIMIT_EXCEEDED]:
+    HttpStatus.TOO_MANY_REQUESTS,
 };
 
 interface HttpExceptionBody {

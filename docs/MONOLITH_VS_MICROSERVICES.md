@@ -124,13 +124,13 @@ The direct browser transfer is safe only when it uses short-lived user-scoped au
 
 ### Current Phase 1 service
 
-This service currently authenticates consumers using `x-api-key` and scopes files using `x-app-id`. Because a permanent API key must not be exposed in browser code, the safe current topology is:
+This service authenticates consumers using `x-api-key` and scopes files using `x-app-id`. Because a permanent API key must not be exposed in browser code, normal JSON and authorization requests use:
 
 ```text
 admin-portal -> admin-bff -> file-media-service
 ```
 
-The BFF may proxy Phase 1 uploads and downloads while limits are small. Before using direct browser-to-service transfer in production, add short-lived operation tokens or place an authenticated gateway in front of the file service. Phase 2 presigned S3 transfers can then bypass the BFF for bytes without bypassing authorization.
+The optional local transfer-authorization feature now lets the BFF issue a short-lived, single-use operation and lets the browser call the file service’s `authorized-upload` or `authorized-download` route without receiving the permanent API key. The BFF may still proxy transfers when that simpler topology is preferred. Phase 2 presigned S3 transfers can bypass the file service for bytes while preserving file-service authorization.
 
 ## Practical decision guide
 

@@ -28,6 +28,9 @@ const ONE_PIXEL_PNG = Buffer.from(
 );
 const TEST_APP_ID = 'e2e-merchant-portal';
 const ADMIN_KEY = 'e2e-admin-key-with-sufficient-length';
+const API_KEY = 'e2e-admin-bff-api-key';
+const TRANSFER_SIGNING_KEY =
+  'e2e-transfer-signing-key-with-sufficient-length';
 const mongoUri = process.env.MONGO_TEST_URI ?? process.env.MONGO_URI;
 const testDatabaseName =
   process.env.MONGO_TEST_DB_NAME ?? 'file_media_service_test';
@@ -55,6 +58,11 @@ describe('File media service (e2e)', () => {
     process.env.MAX_BULK_FILE_COUNT = '3';
     process.env.MAX_BULK_TOTAL_SIZE_BYTES = '2048';
     process.env.API_KEY_REQUIRED = 'false';
+    process.env.API_KEYS = API_KEY;
+    process.env.TRANSFER_AUTHORIZATION_ENABLED = 'true';
+    process.env.TRANSFER_TOKEN_SIGNING_KEY = TRANSFER_SIGNING_KEY;
+    process.env.TRANSFER_TOKEN_TTL_SECONDS = '300';
+    process.env.FILE_SERVICE_PUBLIC_URL = 'http://localhost:7007';
 
     const moduleFixture = await Test.createTestingModule({
       imports: [AppModule],
@@ -68,6 +76,9 @@ describe('File media service (e2e)', () => {
   afterEach(async () => {
     if (connection) {
       await connection.collection('files').deleteMany({ appId: TEST_APP_ID });
+      await connection
+        .collection('transfer_authorizations')
+        .deleteMany({ appId: TEST_APP_ID });
     }
   });
 
@@ -268,6 +279,94 @@ describe('File media service (e2e)', () => {
         }>;
         expect(body.data.successful).toHaveLength(2);
       });
+  });
+
+  it('authorizes browser local upload and download without exposing the API key', async () => {
+    await request(app.getHttpServer())
+      .post('/files/authorizations/upload')
+      .set('x-app-id', TEST_APP_ID)
+      .send({ allowedMimeTypes: ['image/png'] })
+      .expect(401);
+
+    const uploadAuthorizationResponse = await request(app.getHttpServer())
+      .post('/files/authorizations/upload')
+      .set('x-app-id', TEST_APP_ID)
+      .set('x-api-key', API_KEY)
+      .send({
+        maxSizeBytes: 1024,
+        allowedMimeTypes: ['image/png'],
+      })
+      .expect('Cache-Control', 'no-store')
+      .expect(201);
+    const uploadAuthorization =
+      uploadAuthorizationResponse.body as unknown as ApiEnvelope<{
+        url: string;
+        method: string;
+        headers: { Authorization: string };
+        requiresFinalization: boolean;
+      }>;
+    expect(uploadAuthorization.data.url).toBe(
+      'http://localhost:7007/files/authorized-upload',
+    );
+    expect(uploadAuthorization.data.method).toBe('POST');
+    expect(uploadAuthorization.data.requiresFinalization).toBe(false);
+    expect(JSON.stringify(uploadAuthorization.data)).not.toContain(API_KEY);
+
+    const authorizedUploadResponse = await request(app.getHttpServer())
+      .post('/files/authorized-upload')
+      .set(
+        'authorization',
+        uploadAuthorization.data.headers.Authorization,
+      )
+      .attach('file', ONE_PIXEL_PNG, {
+        filename: 'direct-avatar.png',
+        contentType: 'image/png',
+      })
+      .expect(201);
+    const authorizedUpload =
+      authorizedUploadResponse.body as unknown as ApiEnvelope<PublicFileMetadata>;
+    const fileId = authorizedUpload.data.fileId;
+    expect(authorizedUpload.data.appId).toBe(TEST_APP_ID);
+
+    await request(app.getHttpServer())
+      .post('/files/authorized-upload')
+      .set(
+        'authorization',
+        uploadAuthorization.data.headers.Authorization,
+      )
+      .attach('file', ONE_PIXEL_PNG, {
+        filename: 'replay.png',
+        contentType: 'image/png',
+      })
+      .expect(409);
+
+    const downloadAuthorizationResponse = await request(app.getHttpServer())
+      .post(`/files/${fileId}/authorizations/download`)
+      .set('x-app-id', TEST_APP_ID)
+      .set('x-api-key', API_KEY)
+      .expect(201);
+    const downloadAuthorization =
+      downloadAuthorizationResponse.body as unknown as ApiEnvelope<{
+        headers: { Authorization: string };
+      }>;
+
+    await request(app.getHttpServer())
+      .get('/files/507f1f77bcf86cd799439012/authorized-download')
+      .set(
+        'authorization',
+        downloadAuthorization.data.headers.Authorization,
+      )
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .get(`/files/${fileId}/authorized-download`)
+      .set(
+        'authorization',
+        downloadAuthorization.data.headers.Authorization,
+      )
+      .expect('Content-Type', /image\/png/)
+      .expect('Cache-Control', 'private, no-store')
+      .expect(200);
   });
 
   it('rejects oversized multipart files before application logic', async () => {

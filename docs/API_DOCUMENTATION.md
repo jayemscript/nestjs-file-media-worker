@@ -4,7 +4,7 @@ Base URL for local development: `http://localhost:7007`.
 
 ## Authentication and application scope
 
-All file endpoints require a lowercase `x-app-id` header. Phase 1 treats this header as a development identity source; production deployments must replace it with an authenticated application identity.
+Normal service-to-service file endpoints require a lowercase `x-app-id` header. It identifies and scopes the consuming application; it is not authentication. API keys authenticate registered service consumers, while short-lived transfer tokens authenticate direct browser transfers.
 
 Consumer API-key authentication is controlled by these environment variables:
 
@@ -21,6 +21,8 @@ x-api-key: consumer-one-key
 ```
 
 The `api_key` query parameter is also supported, but the header is recommended because URLs are commonly retained in logs and browser history. Missing or invalid keys return `401 Unauthorized`. The consumer API key does not replace `x-app-id`; both are required when API-key authentication is enabled.
+
+Transfer-authorization creation endpoints always require a valid `x-api-key`, even when `API_KEY_REQUIRED=false`. Authorized transfer endpoints require their issued Bearer token and do not trust a browser-provided `x-app-id`.
 
 JSON success responses use this envelope:
 
@@ -84,6 +86,79 @@ curl -X POST http://localhost:7007/files/bulk \
 ```
 
 Request-level file-count and aggregate-size failures reject the entire request. A failure after storage succeeds triggers best-effort storage compensation.
+
+## Short-lived local transfers
+
+Enable the feature only after configuring:
+
+```dotenv
+TRANSFER_AUTHORIZATION_ENABLED=true
+TRANSFER_TOKEN_SIGNING_KEY=replace-with-at-least-32-random-characters
+TRANSFER_TOKEN_TTL_SECONDS=300
+FILE_SERVICE_PUBLIC_URL=https://files.example.com
+TRANSFER_RATE_LIMIT_MAX=30
+TRANSFER_RATE_LIMIT_WINDOW_SECONDS=60
+```
+
+The BFF uses its permanent API key to create a single-use authorization. The browser then transfers bytes directly with this service using only the returned short-lived Bearer token.
+
+### Authorized local upload
+
+The BFF requests authorization:
+
+```bash
+curl -X POST http://localhost:7007/files/authorizations/upload \
+  -H "Content-Type: application/json" \
+  -H "x-app-id: admin-portal" \
+  -H "x-api-key: YOUR_BFF_API_KEY" \
+  --data '{"maxSizeBytes":10485760,"allowedMimeTypes":["image/png","application/pdf"]}'
+```
+
+The JSON envelope contains:
+
+```json
+{
+  "data": {
+    "url": "http://localhost:7007/files/authorized-upload",
+    "method": "POST",
+    "headers": {
+      "Authorization": "Bearer v1.REDACTED"
+    },
+    "expiresAt": "2026-07-23T12:05:00.000Z",
+    "requiresFinalization": false
+  }
+}
+```
+
+The browser sends the multipart upload directly to the returned URL:
+
+```bash
+curl -X POST http://localhost:7007/files/authorized-upload \
+  -H "Authorization: Bearer YOUR_SHORT_LIVED_TOKEN" \
+  -F "file=@./avatar.png"
+```
+
+The token supplies the trusted `appId`; do not send `x-app-id` or the permanent API key from browser code. Local uploads are validated, stored, and activated in the same request, so `requiresFinalization` is `false`.
+
+### Authorized local download
+
+The BFF first authorizes one active file:
+
+```bash
+curl -X POST http://localhost:7007/files/FILE_ID/authorizations/download \
+  -H "x-app-id: admin-portal" \
+  -H "x-api-key: YOUR_BFF_API_KEY"
+```
+
+The browser performs an authenticated request using the returned URL and Bearer header:
+
+```bash
+curl http://localhost:7007/files/FILE_ID/authorized-download \
+  -H "Authorization: Bearer YOUR_SHORT_LIVED_TOKEN" \
+  --output downloaded-file
+```
+
+Tokens are HMAC-signed, expire after the configured lifetime, and are atomically consumed once. Upload tokens restrict size and configured MIME types; download tokens are bound to one `appId` and `fileId`. Missing, malformed, tampered, expired, reused, or scope-mismatched tokens are rejected. Once a token is claimed, a later validation or storage failure requires a newly issued token.
 
 ## Bulk metadata and lifecycle operations
 
@@ -200,12 +275,13 @@ Supported defaults are JPEG, PNG, GIF, WebP, PDF, DOCX, XLSX, MP3, WAV, MP4, and
 | 200 | Successful read, lifecycle action, or bulk processing |
 | 201 | Single file created |
 | 400 | Invalid app/file identifier or missing multipart field |
-| 401 | Missing or invalid consumer API key |
+| 401 | Missing/invalid consumer API key or transfer authorization |
 | 403 | Missing or invalid permanent-delete admin key |
 | 404 | Missing, deleted, or cross-application file |
-| 409 | Invalid lifecycle transition |
+| 409 | Invalid lifecycle transition or reused transfer token |
 | 413 | File, count, or aggregate size limit exceeded |
 | 415 | Unsupported or spoofed file content |
+| 429 | Authorized-transfer rate limit exceeded |
 | 503 | MongoDB or active storage operation unavailable |
 
 ## Postman
@@ -213,3 +289,5 @@ Supported defaults are JPEG, PNG, GIF, WebP, PDF, DOCX, XLSX, MP3, WAV, MP4, and
 For every file request, add `x-app-id` and, when API-key authentication is enabled, `x-api-key`. For uploads, select `form-data` and use a File value named `file` or repeated File values named `files`. Do not manually set `Content-Type`; Postman supplies the multipart boundary.
 
 For bulk JSON operations, select **Body → raw → JSON** and send `{ "fileIds": ["..."] }`. For bulk download, use **Send and Download** in Postman and save the response as `files.zip`.
+
+For authorized transfers, first call the appropriate authorization endpoint and copy `data.headers.Authorization`. Add that complete value as the `Authorization` header on the upload or download request. A token cannot be reused after it is claimed.

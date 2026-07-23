@@ -257,6 +257,21 @@ describe('FilesService', () => {
     expect(storage.openReadStream).toHaveBeenCalledTimes(2);
   });
 
+  it('checks metadata ownership and physical storage before authorizing download', async () => {
+    repository.findActiveByIdAndAppId.mockResolvedValue(metadata());
+    storage.objectExists.mockResolvedValue(false);
+
+    await expect(
+      service.ensureFileDownloadable('admin-portal', FILE_ID),
+    ).rejects.toMatchObject({
+      code: FileMediaErrorCode.FILE_NOT_FOUND,
+    });
+    expect(repository.findActiveByIdAndAppId).toHaveBeenCalledWith(
+      FILE_ID,
+      'admin-portal',
+    );
+  });
+
   it('prevents recovery when the storage object is missing', async () => {
     repository.findByIdAndAppId.mockResolvedValue(metadata(FileStatus.DELETED));
     storage.objectExists.mockResolvedValue(false);

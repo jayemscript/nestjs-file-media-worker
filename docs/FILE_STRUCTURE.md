@@ -3,21 +3,22 @@
 ```text
 src/
   common/
-    decorators/       Response-transform metadata
+    decorators/       Response-transform and API-key requirement metadata
     dtos/             Shared error response shape
     errors/           Application-owned error codes
     filters/          HTTP error translation
     interceptors/     Logging and JSON response envelope
-  config/             MongoDB, storage, and startup validation
+  config/             MongoDB, storage, transfers, and startup validation
   modules/
     files/
-      controllers/    Multipart and download HTTP adapter
-      domain/         Application-owned metadata and operation types
-      guards/         Permanent-delete credential check
-      presentation/   Safe download-header formatting
-      repositories/   Repository contract and Mongoose implementation
-      schemas/        Mongoose schema and indexes
-      services/       App context, validation, and file use cases
+      controllers/    File API and authorized browser-transfer adapters
+      domain/         Application-owned metadata, operation, and transfer types
+      dtos/           Validated bulk and transfer-authorization requests
+      guards/         Permanent-delete and transfer rate-limit checks
+      presentation/   Safe download headers, Bearer parsing, and ZIP streaming
+      repositories/   File and transfer replay repository contracts/adapters
+      schemas/        File metadata and transfer authorization indexes
+      services/       App context, validation, file, and transfer use cases
     storage/
       adapters/       Local filesystem implementation
       interfaces/     Provider-agnostic storage contract
@@ -35,6 +36,8 @@ test/
 docs/
   API_DOCUMENTATION.md
   ARCHITECTURE.md
+  LOCAL_TRANSFER_AUTHORIZATION_PLAN.md
+  MONOLITH_VS_MICROSERVICES.md
   SECURITY.md
 ```
 

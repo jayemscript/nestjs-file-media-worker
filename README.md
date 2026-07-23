@@ -18,6 +18,8 @@ A provider-agnostic NestJS service for file storage and metadata. Phase 1 uses a
 
 2. Copy `.env.example` to `.env` and provide at least `MONGO_URI`, `MONGO_DB_NAME`, and a long `HARD_DELETE_ADMIN_KEY`.
 
+   To enable browser-to-service local transfers, also configure the `TRANSFER_*` values, `FILE_SERVICE_PUBLIC_URL`, and at least one `API_KEYS` entry shown in `.env.example`.
+
 3. Start the service:
 
    ```bash
@@ -43,12 +45,13 @@ Integration and e2e tests use `MONGO_TEST_URI` when present, otherwise `MONGO_UR
 - [API documentation](docs/API_DOCUMENTATION.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Monolith vs. microservices](docs/MONOLITH_VS_MICROSERVICES.md)
-- [Planned local transfer authorization](docs/LOCAL_TRANSFER_AUTHORIZATION_PLAN.md)
+- [Local transfer authorization](docs/LOCAL_TRANSFER_AUTHORIZATION_PLAN.md)
 - [Security](docs/SECURITY.md)
 
 ## Phase 1 limitations
 
 - Uploads are buffered in memory within configured file/count limits. Downloads are streamed.
-- `x-app-id` is a development identity adapter, not production authentication.
+- `x-app-id` identifies the consuming application; it is not authentication.
+- Short-lived local transfer authorization is opt-in and uses a process-local rate limiter. Multi-replica deployments need a distributed gateway limit.
 - Only local storage is implemented. S3 environment variables are not validated until S3 becomes the active Phase 2 provider.
 - Files uploaded by the removed S3 proof of concept are not migrated because they have no MongoDB metadata.

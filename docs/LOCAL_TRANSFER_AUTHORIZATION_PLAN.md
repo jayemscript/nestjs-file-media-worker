@@ -2,7 +2,7 @@
 
 ## Status
 
-Planned after the current local-storage milestone and before the S3 provider. Do not implement as part of unrelated work.
+Implemented for the local provider before the S3 phase.
 
 ## Goal
 
@@ -28,11 +28,11 @@ POST /files/:fileId/authorizations/download
 Browser-facing transfer endpoints:
 
 ```http
-POST /files/direct-upload
-GET /files/:fileId/direct-download
+POST /files/authorized-upload
+GET /files/:fileId/authorized-download
 ```
 
-Names are provisional and should be reviewed before implementation.
+The implemented browser-facing routes use an `Authorization: Bearer ...` header. Query-string tokens are intentionally unsupported to reduce leakage through URLs, logs, and browser history. They are named `authorized-*` rather than `direct-*` because local bytes still pass through the file-service backend.
 
 ## Token requirements
 
@@ -48,15 +48,17 @@ Each signed authorization must be:
 
 Permanent API keys, admin keys, filesystem paths, storage keys, and provider credentials must never be included in the browser response or token claims.
 
-## Implementation milestones
+## Implemented milestones
 
-1. Define provider-agnostic transfer-authorization contracts and normalized errors.
-2. Add configuration for signing key, token lifetime, public file-service URL, and allowed origins.
-3. Implement BFF-only authorization endpoints protected by the existing service API key.
-4. Implement local direct-upload and direct-download routes using temporary authorization.
-5. Add replay protection, rate limiting, audit-safe logging, and cleanup.
-6. Test expiration, tampering, reuse, app isolation, file scope, limits, CORS, and streamed transfers.
-7. Update the client/BFF integration documentation.
+1. Provider-agnostic transfer-authorization contracts and normalized errors.
+2. Opt-in configuration for signing key, token lifetime, public URL, and rate limits.
+3. BFF-only authorization endpoints with mandatory service API-key enforcement.
+4. Local authorized-upload and authorized-download routes using temporary Bearer authorization.
+5. HMAC validation, hashed single-use replay records, MongoDB TTL cleanup, and per-instance rate limiting.
+6. Unit and e2e coverage for configuration, tampering, expiry, reuse, file scope, upload limits, and direct streams.
+7. API, architecture, security, and client integration documentation.
+
+The built-in rate limiter is process-local. Multi-replica production deployments must also enforce distributed limits at a gateway or shared rate-limit service.
 
 ## S3 migration
 
